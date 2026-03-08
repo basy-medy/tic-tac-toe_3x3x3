@@ -1,6 +1,6 @@
 # Twenty-Seven – 3D Tic-Tac-Toe (Updated 2026 Edition)
 
-This is an updated version of my submission for the Android Experiments 2016 contest, now rebuilt and packaged using Claude Opus 4.6.
+This is an updated version of the submission for the Android Experiments 2016 contest, now rebuilt and packaged using Claude Opus 4.6.
 
 **Twenty-Seven** is a three-dimensional take on tic-tac-toe played across a 3×3×3 cube. Players win by connecting three spaces in any direction—horizontally, vertically, or diagonally across all three dimensions.
 
