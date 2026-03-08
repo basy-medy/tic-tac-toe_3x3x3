@@ -1,21 +1,18 @@
 package me.mattlogan.twentyseven.game;
 
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.TextView;
 
-import javax.inject.Inject;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
 
-import butterknife.Bind;
-import butterknife.ButterKnife;
-import butterknife.OnClick;
-import me.mattlogan.twentyseven.MainActivity;
 import me.mattlogan.twentyseven.PlaneTracker;
 import me.mattlogan.twentyseven.R;
+import me.mattlogan.twentyseven.ServiceLocator;
+import me.mattlogan.twentyseven.databinding.FragmentGameBinding;
 import me.mattlogan.twentyseven.messages.IncomingMessageRouter;
 import me.mattlogan.twentyseven.messages.MessagePublisher;
 import timber.log.Timber;
@@ -23,40 +20,47 @@ import timber.log.Timber;
 public class GameFragment extends Fragment
     implements IncomingMessageRouter.GameplayListener, BoardView.ActionListener {
 
-  @Inject IncomingMessageRouter messageRouter;
-  @Inject MessagePublisher messagePublisher;
-  @Inject PlaneTracker planeTracker;
+  private IncomingMessageRouter messageRouter;
+  private MessagePublisher messagePublisher;
+  private PlaneTracker planeTracker;
 
-  @Bind(R.id.board_view) BoardView boardView;
-  @Bind(R.id.game_status_text) TextView statusText;
-  @Bind(R.id.plane_label) TextView planeLabel;
-  @Bind(R.id.button_new_game) Button newGameButton;
+  private FragmentGameBinding binding;
 
   private Game game;
 
-  @Override public View onCreateView(LayoutInflater inflater, ViewGroup root, Bundle state) {
-    ((MainActivity) getActivity()).inject(this);
-    View view = inflater.inflate(R.layout.fragment_game, root, false);
-    ButterKnife.bind(this, view);
+  @Nullable
+  @Override
+  public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup root, Bundle state) {
+    ServiceLocator sl = ServiceLocator.get();
+    messageRouter = sl.messageRouter();
+    messagePublisher = sl.messagePublisher();
+    planeTracker = sl.planeTracker();
+
+    binding = FragmentGameBinding.inflate(inflater, root, false);
     messageRouter.addGameUpdatedListener(this);
-    boardView.setActionListener(this);
-    planeLabel.setText(planeTracker.currentPlane().toDisplayString());
-    onGameUpdated(Game.createNewGame()); // Start with new game
-    return view;
+    binding.boardView.setActionListener(this);
+    binding.planeLabel.setText(planeTracker.currentPlane().toDisplayString());
+    binding.buttonNewGame.setOnClickListener(v -> onNewGameClicked());
+    onGameUpdated(Game.createNewGame());
+    return binding.getRoot();
   }
 
-  @Override public void onDestroyView() {
+  @Override
+  public void onDestroyView() {
     super.onDestroyView();
     messageRouter.removeGameUpdatedListener(this);
+    binding = null;
   }
 
-  @Override public void onGameUpdated(Game game) {
+  @Override
+  public void onGameUpdated(Game game) {
     Timber.d("onGameUpdated: %s", game);
     this.game = game;
     updateViews();
   }
 
-  @Override public void onActionTaken(int space, char mark) {
+  @Override
+  public void onActionTaken(int space, char mark) {
     Timber.d("onActionTaken, space: %d, mark %c", space, mark);
     char[][][] grid = game.grid();
     grid[space % 3][space / 3][planeTracker.currentPlane().zValue()] = mark;
@@ -66,22 +70,22 @@ public class GameFragment extends Fragment
   }
 
   private void updateViews() {
+    if (binding == null) return;
     WinChecker.Win win = WinChecker.checkForWinner(game.grid());
     if (win != null) {
-      statusText.setText(getString(R.string.x_wins, win.winner()));
-      boardView.showWin(win.winner(), win.spaces(), planeTracker.currentPlane().zValue());
-      newGameButton.setVisibility(View.VISIBLE);
+      binding.gameStatusText.setText(getString(R.string.x_wins, win.winner()));
+      binding.boardView.showWin(win.winner(), win.spaces(), planeTracker.currentPlane().zValue());
+      binding.buttonNewGame.setVisibility(View.VISIBLE);
     } else {
-      boardView.updateTurn(game.turn());
-      boardView.updateGrid(game.grid(), planeTracker.currentPlane().zValue());
-      boardView.clearWin();
-      statusText.setText(getString(R.string.xs_turn, game.turn()));
-      newGameButton.setVisibility(View.GONE);
+      binding.boardView.updateTurn(game.turn());
+      binding.boardView.updateGrid(game.grid(), planeTracker.currentPlane().zValue());
+      binding.boardView.clearWin();
+      binding.gameStatusText.setText(getString(R.string.xs_turn, game.turn()));
+      binding.buttonNewGame.setVisibility(View.GONE);
     }
   }
 
-  @OnClick(R.id.button_new_game)
-  public void onNewGameClicked() {
+  private void onNewGameClicked() {
     Timber.d("onNewGameClicked");
     game = Game.createNewGame();
     updateViews();

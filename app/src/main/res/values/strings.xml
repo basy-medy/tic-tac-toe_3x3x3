@@ -7,4 +7,5 @@
     <string name="xs_turn">%c\'s turn</string>
     <string name="x_wins">%c wins</string>
     <string name="new_game">New game</string>
+    <string name="peers_connected">%d peer(s) connected</string>
 </resources>

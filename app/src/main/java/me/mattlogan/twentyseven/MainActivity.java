@@ -1,48 +1,48 @@
 package me.mattlogan.twentyseven;
 
-import android.content.Intent;
-import android.content.IntentSender;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v7.app.AppCompatActivity;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 
-import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.ResultCallback;
-import com.google.android.gms.common.api.Status;
-import com.google.android.gms.nearby.Nearby;
-import com.google.android.gms.nearby.messages.Strategy;
-import com.google.android.gms.nearby.messages.SubscribeOptions;
-import com.squareup.otto.Bus;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
-import javax.inject.Inject;
+import java.util.ArrayList;
+import java.util.List;
 
-import dagger.ObjectGraph;
+import me.mattlogan.twentyseven.databinding.ActivityMainBinding;
 import me.mattlogan.twentyseven.intro.IntroFragment;
-import me.mattlogan.twentyseven.messages.IncomingMessageRouter;
+import me.mattlogan.twentyseven.messages.NearbyConnectionManager;
 import timber.log.Timber;
 
-/**
- * Host of IntroFragment and GameFragment, handles connecting to Nearby API
- */
 public final class MainActivity extends AppCompatActivity {
 
-  @Inject GoogleApiClient client;
-  @Inject Bus bus;
-  @Inject IncomingMessageRouter messageRouter;
+  private NearbyConnectionManager connectionManager;
 
-  private static final int PERMISSION_REQ_CODE = 123;
+  private final ActivityResultLauncher<String[]> permissionLauncher =
+      registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), result -> {
+        boolean allGranted = !result.containsValue(false);
+        if (allGranted) {
+          Timber.d("All permissions granted");
+          startNearby();
+        } else {
+          Timber.d("Some permissions denied, Nearby may not work");
+          startNearby();
+        }
+      });
 
-  private ObjectGraph graph;
-
-  @Override protected void onCreate(Bundle savedInstanceState) {
+  @Override
+  protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    if (Timber.treeCount() == 0) {
-      Timber.plant(new Timber.DebugTree());
-    }
-    graph = ObjectGraph.create(new AppModule(this));
-    inject(this);
-    setContentView(R.layout.activity_main);
+    ActivityMainBinding binding = ActivityMainBinding.inflate(getLayoutInflater());
+    setContentView(binding.getRoot());
+
+    connectionManager = ServiceLocator.get().connectionManager();
+
     if (savedInstanceState == null) {
       getSupportFragmentManager()
           .beginTransaction()
@@ -51,72 +51,45 @@ public final class MainActivity extends AppCompatActivity {
     }
   }
 
-  public void inject(Object o) {
-    graph.inject(o);
-  }
-
-  @Override public void onStart() {
+  @Override
+  public void onStart() {
     super.onStart();
-    Timber.d("onStart");
-    initializeNearbyApi();
+    requestPermissionsAndStart();
   }
 
-  private void initializeNearbyApi() {
-    client.registerConnectionCallbacks(new GoogleApiClient.ConnectionCallbacks() {
-      @Override public void onConnected(@Nullable Bundle bundle) {
-        Timber.d("onConnected");
-        checkPermission();
-      }
-
-      @Override public void onConnectionSuspended(int i) {
-        Timber.d("onConnectionSuspended");
-      }
-    });
-
-    client.connect();
-  }
-
-  private void checkPermission() {
-    Nearby.Messages.getPermissionStatus(client).setResultCallback(new ResultCallback<Status>() {
-      @Override public void onResult(@NonNull Status status) {
-        if (status.isSuccess()) {
-          Timber.d("Permission request successful");
-          onNearbyApiAvailable();
-        } else if (status.hasResolution()) {
-          try {
-            Timber.d("Permission request failed, attempting to resolve");
-            status.startResolutionForResult(MainActivity.this, PERMISSION_REQ_CODE);
-          } catch (IntentSender.SendIntentException e) {
-            Timber.d(e, "Error resolving permission failure");
-          }
-        }
-      }
-    });
-  }
-
-  @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {
-    if (requestCode == PERMISSION_REQ_CODE && resultCode == RESULT_OK) {
-      onNearbyApiAvailable();
-    }
-  }
-
-  private void onNearbyApiAvailable() {
-    Timber.d("onNearbyApiAvailable");
-    SubscribeOptions options = new SubscribeOptions.Builder()
-        .setStrategy(new Strategy.Builder()
-            .setTtlSeconds(Strategy.TTL_SECONDS_INFINITE)
-            .build())
-        .build();
-    Nearby.Messages.subscribe(client, messageRouter, options);
-    bus.post(new OnNearbyApiAvailableEvent());
-  }
-
-  @Override public void onStop() {
+  @Override
+  public void onStop() {
     super.onStop();
-    Timber.d("onStop");
-    if (client.isConnected()) {
-      Nearby.Messages.unsubscribe(client, messageRouter);
-      client.disconnect();
+    connectionManager.stop();
+  }
+
+  private void requestPermissionsAndStart() {
+    List<String> needed = new ArrayList<>();
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      addIfNeeded(needed, Manifest.permission.BLUETOOTH_ADVERTISE);
+      addIfNeeded(needed, Manifest.permission.BLUETOOTH_CONNECT);
+      addIfNeeded(needed, Manifest.permission.BLUETOOTH_SCAN);
     }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      addIfNeeded(needed, Manifest.permission.NEARBY_WIFI_DEVICES);
+    }
+    addIfNeeded(needed, Manifest.permission.ACCESS_FINE_LOCATION);
+
+    if (needed.isEmpty()) {
+      startNearby();
+    } else {
+      permissionLauncher.launch(needed.toArray(new String[0]));
+    }
+  }
+
+  private void addIfNeeded(List<String> list, String permission) {
+    if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+      list.add(permission);
+    }
+  }
+
+  private void startNearby() {
+    connectionManager.start();
   }
 }

@@ -1,8 +1,5 @@
 package me.mattlogan.twentyseven.messages;
 
-import com.google.android.gms.nearby.messages.Message;
-import com.google.android.gms.nearby.messages.MessageListener;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,10 +10,9 @@ import timber.log.Timber;
 import static me.mattlogan.twentyseven.messages.MessagePublisher.PLANE_SELECTED;
 import static me.mattlogan.twentyseven.messages.MessagePublisher.GAME_UPDATED;
 
-public final class IncomingMessageRouter extends MessageListener {
+public final class IncomingMessageRouter {
 
   public interface RemotePlaneSelectedListener {
-    /** Plane selected on another device */
     void onRemotePlaneSelected(Plane plane);
   }
 
@@ -24,12 +20,11 @@ public final class IncomingMessageRouter extends MessageListener {
     void onGameUpdated(Game game);
   }
 
-  private List<RemotePlaneSelectedListener> remotePlaneSelectedListeners = new ArrayList<>();
-  private List<GameplayListener> gameplayListeners = new ArrayList<>();
+  private final List<RemotePlaneSelectedListener> remotePlaneSelectedListeners = new ArrayList<>();
+  private final List<GameplayListener> gameplayListeners = new ArrayList<>();
 
-  @Override public void onFound(Message message) {
-    String s = new String(message.getContent());
-    Timber.d("onFound: %s", s);
+  public void onMessageReceived(String s) {
+    Timber.d("onMessageReceived: %s", s);
     if (s.startsWith(PLANE_SELECTED)) {
       Plane selectedPlane = Plane.valueOf(s.substring(PLANE_SELECTED.length()));
       for (RemotePlaneSelectedListener listener : remotePlaneSelectedListeners) {

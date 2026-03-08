@@ -1,77 +1,72 @@
 package me.mattlogan.twentyseven.intro;
 
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.TextView;
 
-import com.squareup.otto.Bus;
-import com.squareup.otto.Subscribe;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
 
-import javax.inject.Inject;
-
-import butterknife.Bind;
-import butterknife.ButterKnife;
-import butterknife.OnClick;
-import me.mattlogan.twentyseven.MainActivity;
-import me.mattlogan.twentyseven.OnNearbyApiAvailableEvent;
 import me.mattlogan.twentyseven.Plane;
 import me.mattlogan.twentyseven.PlaneTracker;
 import me.mattlogan.twentyseven.R;
+import me.mattlogan.twentyseven.ServiceLocator;
+import me.mattlogan.twentyseven.databinding.FragmentIntroBinding;
 import me.mattlogan.twentyseven.game.GameFragment;
 import me.mattlogan.twentyseven.messages.IncomingMessageRouter;
 import me.mattlogan.twentyseven.messages.MessagePublisher;
+import me.mattlogan.twentyseven.messages.NearbyConnectionManager;
 
 public class IntroFragment extends Fragment
-    implements IncomingMessageRouter.RemotePlaneSelectedListener {
+    implements IncomingMessageRouter.RemotePlaneSelectedListener,
+    NearbyConnectionManager.ConnectionListener {
 
-  @Inject Bus bus;
-  @Inject PlaneTracker planeTracker;
-  @Inject MessagePublisher messagePublisher;
-  @Inject IncomingMessageRouter messageRouter;
+  private PlaneTracker planeTracker;
+  private MessagePublisher messagePublisher;
+  private IncomingMessageRouter messageRouter;
+  private NearbyConnectionManager connectionManager;
 
-  @Bind(R.id.buttons_layout) View buttonsLayout;
-  @Bind(R.id.button_front) Button frontButton;
-  @Bind(R.id.button_middle) Button middleButton;
-  @Bind(R.id.button_back) Button backButton;
-  @Bind(R.id.waiting_text) TextView waitingText;
+  private FragmentIntroBinding binding;
 
   private int numSelectedRemotePlanes;
 
-  @Override public View onCreateView(LayoutInflater inflater, ViewGroup root, Bundle state) {
-    ((MainActivity) getActivity()).inject(this);
-    View view = inflater.inflate(R.layout.fragment_intro, root, false);
-    ButterKnife.bind(this, view);
-    bus.register(this);
+  @Nullable
+  @Override
+  public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup root, Bundle state) {
+    ServiceLocator sl = ServiceLocator.get();
+    planeTracker = sl.planeTracker();
+    messagePublisher = sl.messagePublisher();
+    messageRouter = sl.messageRouter();
+    connectionManager = sl.connectionManager();
+
+    binding = FragmentIntroBinding.inflate(inflater, root, false);
     messageRouter.addPlaneSelectedListener(this);
-    return view;
+    connectionManager.setConnectionListener(this);
+
+    binding.buttonFront.setOnClickListener(v -> onLocalPlaneSelected(Plane.FRONT));
+    binding.buttonMiddle.setOnClickListener(v -> onLocalPlaneSelected(Plane.MIDDLE));
+    binding.buttonBack.setOnClickListener(v -> onLocalPlaneSelected(Plane.BACK));
+
+    // Enable buttons immediately — nearby runs in background
+    enableButtons();
+
+    return binding.getRoot();
   }
 
-  @Override public void onDestroyView() {
+  @Override
+  public void onDestroyView() {
     super.onDestroyView();
-    bus.unregister(this);
     messageRouter.removePlaneSelectedListener(this);
-  }
-
-  @OnClick(R.id.button_front) public void onFrontButtonClicked() {
-    onLocalPlaneSelected(Plane.FRONT);
-  }
-
-  @OnClick(R.id.button_middle) public void onMiddleButtonClicked() {
-    onLocalPlaneSelected(Plane.MIDDLE);
-  }
-
-  @OnClick(R.id.button_back) public void onBackButtonClicked() {
-    onLocalPlaneSelected(Plane.BACK);
+    connectionManager.setConnectionListener(null);
+    binding = null;
   }
 
   private void enableButtons() {
-    frontButton.setEnabled(true);
-    middleButton.setEnabled(true);
-    backButton.setEnabled(true);
+    binding.buttonFront.setEnabled(true);
+    binding.buttonMiddle.setEnabled(true);
+    binding.buttonBack.setEnabled(true);
   }
 
   private void onLocalPlaneSelected(Plane plane) {
@@ -84,20 +79,40 @@ public class IntroFragment extends Fragment
     }
   }
 
-  @Subscribe public void onNearbyApiAvailable(OnNearbyApiAvailableEvent e) {
-    enableButtons();
+  @Override
+  public void onNearbyStarted() {
+    // Nearby is ready — buttons are already enabled
   }
 
-  @Override public void onRemotePlaneSelected(Plane plane) {
+  @Override
+  public void onPeerConnected(int totalConnected) {
+    if (binding != null) {
+      binding.connectionStatus.setVisibility(View.VISIBLE);
+      binding.connectionStatus.setText(
+          getString(R.string.peers_connected, totalConnected));
+    }
+  }
+
+  @Override
+  public void onPeerDisconnected(int totalConnected) {
+    if (binding != null) {
+      binding.connectionStatus.setText(
+          getString(R.string.peers_connected, totalConnected));
+    }
+  }
+
+  @Override
+  public void onRemotePlaneSelected(Plane plane) {
+    if (binding == null) return;
     switch (plane) {
       case FRONT:
-        frontButton.setEnabled(false);
+        binding.buttonFront.setEnabled(false);
         break;
       case MIDDLE:
-        middleButton.setEnabled(false);
+        binding.buttonMiddle.setEnabled(false);
         break;
       case BACK:
-        backButton.setEnabled(false);
+        binding.buttonBack.setEnabled(false);
         break;
     }
 
@@ -107,12 +122,12 @@ public class IntroFragment extends Fragment
   }
 
   private void showWaiting() {
-    buttonsLayout.setVisibility(View.GONE);
-    waitingText.setVisibility(View.VISIBLE);
+    binding.buttonsLayout.setVisibility(View.GONE);
+    binding.waitingText.setVisibility(View.VISIBLE);
   }
 
   private void continueToGame() {
-    getActivity().getSupportFragmentManager()
+    requireActivity().getSupportFragmentManager()
         .beginTransaction()
         .replace(R.id.fragment_container, new GameFragment())
         .commit();
